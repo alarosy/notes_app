@@ -33,8 +33,43 @@ $messages = [
 ];
 $msg = input_text($_GET, 'msg');
 
-$result = mysqli_query($conn, 'SELECT id, title, content, category, created_at, updated_at FROM notes ORDER BY created_at DESC, id DESC');
-$notes = mysqli_fetch_all($result, MYSQLI_ASSOC);
+// البحث في العناوين وفلتر التصنيف (يمكن استخدامهما معًا)
+$search = input_text($_GET, 'q');
+$filter_category = input_text($_GET, 'category');
+if (!in_array($filter_category, $categories, true)) {
+    $filter_category = '';
+}
+
+$sql = 'SELECT id, title, content, category, created_at, updated_at FROM notes';
+$conditions = [];
+$types = '';
+$params = [];
+
+if ($search !== '') {
+    $conditions[] = 'title LIKE ?';
+    // نهرّب % و _ حتى يُبحث عنهما كحروف عادية
+    $params[] = '%' . addcslashes($search, '%_\\') . '%';
+    $types .= 's';
+}
+if ($filter_category !== '') {
+    $conditions[] = 'category = ?';
+    $params[] = $filter_category;
+    $types .= 's';
+}
+if (!empty($conditions)) {
+    $sql .= ' WHERE ' . implode(' AND ', $conditions);
+}
+$sql .= ' ORDER BY created_at DESC, id DESC';
+
+$stmt = mysqli_prepare($conn, $sql);
+if (!empty($params)) {
+    mysqli_stmt_bind_param($stmt, $types, ...$params);
+}
+mysqli_stmt_execute($stmt);
+$notes = mysqli_fetch_all(mysqli_stmt_get_result($stmt), MYSQLI_ASSOC);
+mysqli_stmt_close($stmt);
+
+$is_filtered = ($search !== '' || $filter_category !== '');
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -99,13 +134,36 @@ $notes = mysqli_fetch_all($result, MYSQLI_ASSOC);
         </form>
     </section>
 
+    <section class="box">
+        <form method="get" action="index.php" class="search-bar">
+            <input type="search" name="q" placeholder="ابحث في عناوين الملاحظات..."
+                   value="<?= e($search) ?>" aria-label="البحث في العناوين">
+            <select name="category" aria-label="التصنيف">
+                <option value="">كل التصنيفات</option>
+                <?php foreach ($categories as $cat): ?>
+                    <option value="<?= e($cat) ?>" <?= $cat === $filter_category ? 'selected' : '' ?>>
+                        <?= e($cat) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <button type="submit" class="btn">بحث</button>
+            <?php if ($is_filtered): ?>
+                <a href="index.php" class="btn btn-light">مسح البحث</a>
+            <?php endif; ?>
+        </form>
+    </section>
+
     <section>
         <div class="list-header">
             <h2>ملاحظاتي</h2>
             <span class="counter">عدد الملاحظات: <?= count($notes) ?></span>
         </div>
 
-        <?php if (empty($notes)): ?>
+        <?php if (empty($notes) && $is_filtered): ?>
+            <div class="box empty-state">
+                لا توجد ملاحظات مطابقة للبحث. جرّب كلمة أخرى أو اختر "كل التصنيفات".
+            </div>
+        <?php elseif (empty($notes)): ?>
             <div class="box empty-state">
                 لا توجد ملاحظات بعد. ابدأ بإضافة أول ملاحظة من النموذج أعلاه.
             </div>

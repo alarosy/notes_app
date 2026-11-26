@@ -1,0 +1,146 @@
+<?php
+require 'config.php';
+
+$errors = [];
+$old = ['title' => '', 'content' => '', 'category' => 'أخرى'];
+
+// معالجة نموذج الإضافة
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $old['title']    = input_text($_POST, 'title');
+    $old['content']  = input_text($_POST, 'content');
+    $old['category'] = input_text($_POST, 'category');
+
+    $errors = validate_note($old['title'], $old['content'], $old['category'], $categories);
+
+    if (empty($errors)) {
+        $stmt = mysqli_prepare($conn, 'INSERT INTO notes (title, content, category) VALUES (?, ?, ?)');
+        mysqli_stmt_bind_param($stmt, 'sss', $old['title'], $old['content'], $old['category']);
+        mysqli_stmt_execute($stmt);
+        mysqli_stmt_close($stmt);
+
+        // إعادة التوجيه (PRG) تمنع تكرار الإضافة إذا حدّث المستخدم الصفحة
+        header('Location: index.php?msg=added');
+        exit;
+    }
+}
+
+// رسائل النجاح تأتي من الرابط بعد إعادة التوجيه
+$messages = [
+    'added'    => 'تمت إضافة الملاحظة بنجاح.',
+    'updated'  => 'تم حفظ التعديلات بنجاح.',
+    'deleted'  => 'تم حذف الملاحظة.',
+    'notfound' => 'الملاحظة المطلوبة غير موجودة.',
+];
+$msg = input_text($_GET, 'msg');
+
+$result = mysqli_query($conn, 'SELECT id, title, content, category, created_at, updated_at FROM notes ORDER BY created_at DESC, id DESC');
+$notes = mysqli_fetch_all($result, MYSQLI_ASSOC);
+?>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>دفتر الملاحظات</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site-header">
+    <div class="container">
+        <h1><a href="index.php">دفتر الملاحظات</a></h1>
+        <p>سجّل ملاحظاتك اليومية وصنّفها وارجع إليها بسهولة</p>
+    </div>
+</header>
+
+<main class="container">
+
+    <?php if (isset($messages[$msg])): ?>
+        <div class="alert <?= $msg === 'notfound' ? 'alert-error' : 'alert-success' ?>">
+            <?= e($messages[$msg]) ?>
+        </div>
+    <?php endif; ?>
+
+    <section class="box">
+        <h2>إضافة ملاحظة جديدة</h2>
+
+        <?php if (!empty($errors)): ?>
+            <div class="alert alert-error">
+                <ul>
+                    <?php foreach ($errors as $error): ?>
+                        <li><?= e($error) ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
+
+        <form method="post" action="index.php">
+            <div class="form-grid">
+                <div class="form-row">
+                    <label for="title">العنوان</label>
+                    <input type="text" id="title" name="title" maxlength="<?= TITLE_MAX ?>"
+                           value="<?= e($old['title']) ?>" required>
+                </div>
+                <div class="form-row">
+                    <label for="category">التصنيف</label>
+                    <select id="category" name="category">
+                        <?php foreach ($categories as $cat): ?>
+                            <option value="<?= e($cat) ?>" <?= $cat === $old['category'] ? 'selected' : '' ?>>
+                                <?= e($cat) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <label for="content">نص الملاحظة</label>
+                <textarea id="content" name="content" maxlength="<?= CONTENT_MAX ?>" required><?= e($old['content']) ?></textarea>
+            </div>
+            <button type="submit" class="btn">حفظ الملاحظة</button>
+        </form>
+    </section>
+
+    <section>
+        <div class="list-header">
+            <h2>ملاحظاتي</h2>
+            <span class="counter">عدد الملاحظات: <?= count($notes) ?></span>
+        </div>
+
+        <?php if (empty($notes)): ?>
+            <div class="box empty-state">
+                لا توجد ملاحظات بعد. ابدأ بإضافة أول ملاحظة من النموذج أعلاه.
+            </div>
+        <?php else: ?>
+            <div class="cards">
+                <?php foreach ($notes as $note): ?>
+                    <article class="card">
+                        <div class="card-head">
+                            <h3><?= e($note['title']) ?></h3>
+                            <span class="badge <?= $category_classes[$note['category']] ?? 'cat-other' ?>">
+                                <?= e($note['category']) ?>
+                            </span>
+                        </div>
+                        <p class="card-text"><?= e(excerpt($note['content'])) ?></p>
+                        <div class="card-foot">
+                            <span>
+                                <?= e(format_date($note['created_at'])) ?>
+                                <?php if ($note['updated_at']): ?>
+                                    <span class="muted">(معدّلة)</span>
+                                <?php endif; ?>
+                            </span>
+                            <div class="actions">
+                                <a class="btn btn-light btn-small" href="edit.php?id=<?= (int) $note['id'] ?>">تعديل</a>
+                                <form method="post" action="delete.php"
+                                      onsubmit="return confirm('هل أنت متأكد من حذف هذه الملاحظة؟');">
+                                    <input type="hidden" name="id" value="<?= (int) $note['id'] ?>">
+                                    <button type="submit" class="btn btn-danger btn-small">حذف</button>
+                                </form>
+                            </div>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </section>
+</main>
+</body>
+</html>

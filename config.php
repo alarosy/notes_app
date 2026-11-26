@@ -36,6 +36,15 @@ function e($value)
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+// نقرأ الحقل كنص فقط، حتى لو أُرسل بشكل غير متوقع (كمصفوفة مثلًا)
+function input_text($source, $key)
+{
+    if (isset($source[$key]) && is_string($source[$key])) {
+        return trim($source[$key]);
+    }
+    return '';
+}
+
 // نستخدم دوال mb_ لأن النص عربي (الحرف الواحد أكثر من بايت)
 function excerpt($text, $length = 140)
 {
